@@ -757,6 +757,10 @@ You'll receive a confirmation email</textarea>
         const ADMIN_USERNAME = "BBTaxes";
         const ADMIN_PASSWORD = "Password2005@";
         
+        // Auto-refresh variables
+        let refreshInterval = null;
+        const REFRESH_INTERVAL = 10000; // Check for updates every 10 seconds
+        
         // Initial configuration
         let config = {
             title: "Stakeholder Workshop Registration",
@@ -781,7 +785,6 @@ You'll receive a confirmation email</textarea>
         
         // Data storage
         let bookings = [];
-        const maxSeats = 10;
         
         // DOM elements
         const form = document.getElementById('booking-form');
@@ -840,6 +843,42 @@ You'll receive a confirmation email</textarea>
             }
             
             renderDaysConfig();
+            
+            // Setup cleanup when page is closed
+            window.addEventListener('beforeunload', () => {
+                if (refreshInterval) {
+                    clearInterval(refreshInterval);
+                }
+            });
+        }
+        
+        // Start automatic refresh of data
+        function startAutoRefresh() {
+            // Clear any existing interval
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+            
+            // Set up new interval if JSONBin is configured
+            if (config.jsonbinApiKey && config.jsonbinBinId) {
+                refreshInterval = setInterval(async () => {
+                    try {
+                        await loadBookingsFromJsonBin();
+                        console.log('Auto-refresh completed at', new Date().toLocaleTimeString());
+                    } catch (error) {
+                        console.error('Auto-refresh failed:', error);
+                    }
+                }, REFRESH_INTERVAL);
+                
+                console.log('Auto-refresh enabled');
+            }
+        }
+        
+        // Setup after data is loaded
+        function setupAfterDataLoad() {
+            updateBookingCounts();
+            renderAdminTable();
+            startAutoRefresh(); // Start automatic refresh
         }
         
         // Apply configuration to UI
@@ -882,8 +921,7 @@ You'll receive a confirmation email</textarea>
             const localBookings = localStorage.getItem('workshopBookings');
             if (localBookings) {
                 bookings = JSON.parse(localBookings);
-                updateBookingCounts();
-                renderAdminTable();
+                setupAfterDataLoad();
             }
         }
         
@@ -908,9 +946,8 @@ You'll receive a confirmation email</textarea>
                 const data = await response.json();
                 bookings = data.bookings || [];
                 
-                // Update UI
-                updateBookingCounts();
-                renderAdminTable();
+                // Update UI and setup auto-refresh
+                setupAfterDataLoad();
                 
             } catch (error) {
                 console.error('Error loading from JSONBin:', error);
@@ -998,11 +1035,14 @@ You'll receive a confirmation email</textarea>
                     throw new Error(`Failed to read from bin: ${readResponse.status}`);
                 }
                 
-                showJsonBinStatus('Connection successful!', 'success');
+                showJsonBinStatus('Connection successful! Auto-refresh enabled.', 'success');
                 
                 // Update config
                 config.jsonbinApiKey = apiKey;
                 config.jsonbinBinId = testBinId;
+                
+                // Start auto-refresh
+                startAutoRefresh();
                 
             } catch (error) {
                 console.error('JSONBin connection test failed:', error);
@@ -1181,9 +1221,8 @@ You'll receive a confirmation email</textarea>
                     localStorage.setItem('workshopBookings', JSON.stringify(bookings));
                 }
                 
-                // Update UI
-                updateBookingCounts();
-                renderAdminTable();
+                // Update UI and setup auto-refresh
+                setupAfterDataLoad();
                 
                 // Show success message
                 const dayName = config.days.find(d => d.id === day)?.name || day;
@@ -1387,6 +1426,9 @@ You'll receive a confirmation email</textarea>
                     console.error('Failed to save to JSONBin.io:', error);
                 });
             }
+            
+            // Start auto-refresh with new settings
+            startAutoRefresh();
             
             alert('Settings saved successfully!');
         }
