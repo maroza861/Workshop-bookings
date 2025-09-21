@@ -828,7 +828,7 @@ You'll receive a confirmation email</textarea>
         const SYNC_CHECK_INTERVAL = 5000; // Check for updates every 5 seconds
         let lastUpdateTimestamp = 0;
         
-        // Initial configuration
+        // Initial configuration - will be loaded from JSONBin
         let config = {
             title: "Stakeholder Workshop Registration",
             description: "Reserve your seat for our two-day workshop. Limited to 10 participants per day.",
@@ -884,17 +884,13 @@ You'll receive a confirmation email</textarea>
         
         // Initialize the page
         async function init() {
-            // Apply config to UI
-            applyConfig();
-            
-            // Load bookings from JSONBin.io
+            // Load data from JSONBin.io
             showLoading();
             try {
-                await loadBookingsFromJsonBin();
+                await loadAllDataFromJsonBin();
             } catch (error) {
-                console.error('Failed to load bookings from JSONBin:', error);
-                // Fallback to localStorage
-                loadBookingsFromLocalStorage();
+                console.error('Failed to load data from JSONBin:', error);
+                alert('Failed to connect to the server. Please try again later.');
             } finally {
                 hideLoading();
             }
@@ -907,6 +903,63 @@ You'll receive a confirmation email</textarea>
             });
             
             console.log('Workshop booking system initialized with auto-refresh');
+        }
+        
+        // Load both config and bookings from JSONBin.io
+        async function loadAllDataFromJsonBin() {
+            if (!config.jsonbinApiKey || !config.jsonbinBinId) {
+                throw new Error('JSONBin.io not configured');
+            }
+            
+            try {
+                // Show updating indicator
+                document.querySelectorAll('.status-card .count').forEach(el => {
+                    el.classList.add('updating');
+                });
+                
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${config.jsonbinBinId}/latest`, {
+                    headers: {
+                        'X-Master-Key': config.jsonbinApiKey,
+                        'X-Bin-Meta': true
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch data: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Update config and bookings from server
+                if (data.record.config) {
+                    config = { ...config, ...data.record.config };
+                }
+                
+                bookings = data.record.bookings || [];
+                
+                // Update the timestamp
+                lastUpdateTimestamp = new Date(data.record.updatedAt || data.metadata.updatedAt).getTime();
+                
+                // Apply config to UI
+                applyConfig();
+                
+                // Update UI and setup auto-refresh
+                setupAfterDataLoad();
+                
+                // Show notification if this wasn't the initial load
+                if (lastUpdateTimestamp > 0) {
+                    showUpdateNotification();
+                }
+                
+            } catch (error) {
+                console.error('Error loading from JSONBin:', error);
+                throw error;
+            } finally {
+                // Remove updating indicator
+                document.querySelectorAll('.status-card .count').forEach(el => {
+                    el.classList.remove('updating');
+                });
+            }
         }
         
         // Start automatic refresh of data
@@ -950,7 +1003,7 @@ You'll receive a confirmation email</textarea>
                 // If the data is newer than what we have, refresh
                 if (latestUpdate > lastUpdateTimestamp) {
                     console.log('New updates detected, refreshing data...');
-                    await loadBookingsFromJsonBin();
+                    await loadAllDataFromJsonBin();
                     lastUpdateTimestamp = latestUpdate;
                 }
             } catch (error) {
@@ -962,6 +1015,7 @@ You'll receive a confirmation email</textarea>
         function setupAfterDataLoad() {
             updateBookingCounts();
             updateLastModifiedDisplay();
+            renderAdminTable();
             startAutoRefresh(); // Start automatic refresh
         }
         
@@ -1000,65 +1054,8 @@ You'll receive a confirmation email</textarea>
             renderStatusCards();
         }
         
-        // Load bookings from localStorage
-        function loadBookingsFromLocalStorage() {
-            const localBookings = localStorage.getItem('workshopBookings');
-            if (localBookings) {
-                bookings = JSON.parse(localBookings);
-                setupAfterDataLoad();
-            }
-        }
-        
-        // Load bookings from JSONBin.io
-        async function loadBookingsFromJsonBin() {
-            if (!config.jsonbinApiKey || !config.jsonbinBinId) {
-                throw new Error('JSONBin.io not configured');
-            }
-            
-            try {
-                // Show updating indicator
-                document.querySelectorAll('.status-card .count').forEach(el => {
-                    el.classList.add('updating');
-                });
-                
-                const response = await fetch(`https://api.jsonbin.io/v3/b/${config.jsonbinBinId}/latest`, {
-                    headers: {
-                        'X-Master-Key': config.jsonbinApiKey,
-                        'X-Bin-Meta': true
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch data: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                bookings = data.record.bookings || [];
-                
-                // Update the timestamp
-                lastUpdateTimestamp = new Date(data.record.updatedAt || data.metadata.updatedAt).getTime();
-                
-                // Update UI and setup auto-refresh
-                setupAfterDataLoad();
-                
-                // Show notification if this wasn't the initial load
-                if (lastUpdateTimestamp > 0) {
-                    showUpdateNotification();
-                }
-                
-            } catch (error) {
-                console.error('Error loading from JSONBin:', error);
-                throw error;
-            } finally {
-                // Remove updating indicator
-                document.querySelectorAll('.status-card .count').forEach(el => {
-                    el.classList.remove('updating');
-                });
-            }
-        }
-        
-        // Save bookings to JSONBin.io
-        async function saveBookingsToJsonBin() {
+        // Save all data (config and bookings) to JSONBin.io
+        async function saveAllDataToJsonBin() {
             if (!config.jsonbinApiKey || !config.jsonbinBinId) {
                 throw new Error('JSONBin.io not configured');
             }
@@ -1286,14 +1283,8 @@ You'll receive a confirmation email</textarea>
                 // Add to local array
                 bookings.push(booking);
                 
-                // Try to save to JSONBin.io
-                try {
-                    await saveBookingsToJsonBin();
-                } catch (error) {
-                    console.error('Failed to save to JSONBin.io, falling back to localStorage:', error);
-                    // Fallback to localStorage
-                    localStorage.setItem('workshopBookings', JSON.stringify(bookings));
-                }
+                // Save to JSONBin.io
+                await saveAllDataToJsonBin();
                 
                 // Update UI and setup auto-refresh
                 setupAfterDataLoad();
@@ -1309,6 +1300,8 @@ You'll receive a confirmation email</textarea>
             } catch (error) {
                 console.error('Error saving booking:', error);
                 alert('Error saving booking: ' + error.message);
+                // Remove the booking from local array if save failed
+                bookings = bookings.filter(b => b.id !== booking.id);
             } finally {
                 hideLoading();
             }
@@ -1346,14 +1339,14 @@ You'll receive a confirmation email</textarea>
         
         refreshBtn.addEventListener('click', function() {
             showLoading();
-            loadBookingsFromJsonBin().finally(() => {
+            loadAllDataFromJsonBin().finally(() => {
                 hideLoading();
             });
         });
         
         manualRefreshBtn.addEventListener('click', function() {
             showLoading();
-            loadBookingsFromJsonBin().finally(() => {
+            loadAllDataFromJsonBin().finally(() => {
                 hideLoading();
             });
         });
@@ -1362,26 +1355,50 @@ You'll receive a confirmation email</textarea>
             exportToCSV();
         });
         
-        saveSettingsBtn.addEventListener('click', function() {
-            saveConfig();
+        saveSettingsBtn.addEventListener('click', async function() {
+            // Update config from form fields
+            config.title = document.getElementById('admin-workshop-title').value;
+            config.description = document.getElementById('admin-workshop-description').value;
+            config.instructions = document.getElementById('admin-instructions').value;
+            config.instructionsList = document.getElementById('admin-instructions-list').value.split('\n');
+            config.contactText = document.getElementById('admin-contact-text').value;
+            config.contactEmail = document.getElementById('admin-contact-email').value;
+            config.contactPhone = document.getElementById('admin-contact-phone').value;
+            
+            // Save to JSONBin
+            try {
+                showLoading();
+                await saveAllDataToJsonBin();
+                
+                // Apply to UI
+                applyConfig();
+                
+                // Start auto-refresh with new settings
+                startAutoRefresh();
+                
+                alert('Settings saved successfully!');
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                alert('Error saving settings: ' + error.message);
+            } finally {
+                hideLoading();
+            }
         });
         
-        clearAllBtn.addEventListener('click', function() {
+        clearAllBtn.addEventListener('click', async function() {
             if (confirm('Are you sure you want to delete all bookings? This action cannot be undone.')) {
-                bookings = [];
-                
-                // Update storage
-                if (config.jsonbinApiKey && config.jsonbinBinId) {
-                    saveBookingsToJsonBin().catch(error => {
-                        console.error('Failed to clear bookings on JSONBin.io:', error);
-                        localStorage.setItem('workshopBookings', JSON.stringify(bookings));
-                    });
-                } else {
-                    localStorage.setItem('workshopBookings', JSON.stringify(bookings));
+                try {
+                    showLoading();
+                    bookings = [];
+                    await saveAllDataToJsonBin();
+                    updateBookingCounts();
+                    renderAdminTable();
+                } catch (error) {
+                    console.error('Error clearing bookings:', error);
+                    alert('Error clearing bookings: ' + error.message);
+                } finally {
+                    hideLoading();
                 }
-                
-                updateBookingCounts();
-                renderAdminTable();
             }
         });
         
@@ -1479,35 +1496,6 @@ You'll receive a confirmation email</textarea>
             });
         }
         
-        function saveConfig() {
-            // Update config from form fields
-            config.title = document.getElementById('admin-workshop-title').value;
-            config.description = document.getElementById('admin-workshop-description').value;
-            config.instructions = document.getElementById('admin-instructions').value;
-            config.instructionsList = document.getElementById('admin-instructions-list').value.split('\n');
-            config.contactText = document.getElementById('admin-contact-text').value;
-            config.contactEmail = document.getElementById('admin-contact-email').value;
-            config.contactPhone = document.getElementById('admin-contact-phone').value;
-            
-            // Save to localStorage
-            localStorage.setItem('workshopConfig', JSON.stringify(config));
-            
-            // Apply to UI
-            applyConfig();
-            
-            // Save bookings to JSONBin if configured
-            if (config.jsonbinApiKey && config.jsonbinBinId) {
-                saveBookingsToJsonBin().catch(error => {
-                    console.error('Failed to save to JSONBin.io:', error);
-                });
-            }
-            
-            // Start auto-refresh with new settings
-            startAutoRefresh();
-            
-            alert('Settings saved successfully!');
-        }
-        
         function renderAdminTable() {
             const tableBody = document.getElementById('bookings-table-body');
             tableBody.innerHTML = '';
@@ -1541,22 +1529,20 @@ You'll receive a confirmation email</textarea>
             });
         }
         
-        function deleteBooking(id) {
+        async function deleteBooking(id) {
             if (confirm('Are you sure you want to delete this booking?')) {
-                bookings = bookings.filter(booking => booking.id !== id);
-                
-                // Update storage
-                if (config.jsonbinApiKey && config.jsonbinBinId) {
-                    saveBookingsToJsonBin().catch(error => {
-                        console.error('Failed to delete booking on JSONBin.io:', error);
-                        localStorage.setItem('workshopBookings', JSON.stringify(bookings));
-                    });
-                } else {
-                    localStorage.setItem('workshopBookings', JSON.stringify(bookings));
+                try {
+                    showLoading();
+                    bookings = bookings.filter(booking => booking.id !== id);
+                    await saveAllDataToJsonBin();
+                    updateBookingCounts();
+                    renderAdminTable();
+                } catch (error) {
+                    console.error('Error deleting booking:', error);
+                    alert('Error deleting booking: ' + error.message);
+                } finally {
+                    hideLoading();
                 }
-                
-                updateBookingCounts();
-                renderAdminTable();
             }
         }
         
