@@ -1515,7 +1515,7 @@ You'll receive a confirmation email</textarea>
                     <td>${booking.name}</td>
                     <td>${booking.email}</td>
                     <td>${booking.phone}</td>
-                    <td>${booking.type}</td>
+                    <td>${booking.type === 'organization' ? booking.organization : booking.type}</td>
                     <td>${booking.organization || '-'}</td>
                     <td>${dayName}</td>
                     <td>
@@ -1629,3 +1629,4 @@ You'll receive a confirmation email</textarea>
 </body>
 
 </html>
+
