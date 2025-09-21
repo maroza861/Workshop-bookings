@@ -1212,7 +1212,7 @@ You'll receive a confirmation email</textarea>
             const email = document.getElementById('email').value.trim();
             const phone = document.getElementById('phone').value.trim();
             const type = document.querySelector('input[name="type"]:checked').value;
-            const organization = type === 'organization' ? document.getElementById('organization').value.trim() : '';
+            const organization = document.getElementById('organization').value.trim();
             const day = document.getElementById('day').value;
             
             // Validate form
@@ -1271,7 +1271,7 @@ You'll receive a confirmation email</textarea>
                 email,
                 phone,
                 type,
-                organization: organization || "",
+                organization: type === 'organization' ? organization : "",
                 day,
                 timestamp: new Date().toISOString()
             };
@@ -1629,4 +1629,5 @@ You'll receive a confirmation email</textarea>
 </body>
 
 </html>
+
 
